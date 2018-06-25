@@ -44,6 +44,7 @@
  * SUCH DAMAGE.
  */
 #include <stdio.h>
+#include "network_sort.h"
 #define Min(X, Y) (((X) < (Y)) ? (X) : (Y))
 
 static char *med3(char *a, char *b, char *c,
@@ -65,6 +66,8 @@ static void swapfunc(char *, char *, size_t, int);
  * worth the effort", but we have seen crashes in the field due to stack
  * overrun, so that judgment seems wrong.
  */
+
+#ifndef swap
 
 #define swapcode(TYPE, parmi, parmj, n) \
 do {		\
@@ -98,6 +101,8 @@ swapfunc(char *a, char *b, size_t n, int swaptype)
 	} else							\
 		swapfunc(a, b, es, swaptype)
 
+#endif
+
 #define vecswap(a, b, n) if ((n) > 0) swapfunc(a, b, n, swaptype)
 
 static char *
@@ -107,7 +112,6 @@ med3(char *a, char *b, char *c, int (*cmp) (const void *, const void *))
 		(cmp(b, c) < 0 ? b : (cmp(a, c) < 0 ? c : a))
 		: (cmp(b, c) > 0 ? b : (cmp(a, c) < 0 ? a : c));
 }
-
 
 char	   *pa,
            *pb,
@@ -125,14 +129,10 @@ int			r,
 void
 pg_qsort(void *a, size_t n, size_t es, int (*cmp) (const void *, const void *))
 {
-
 loop:SWAPINIT(a, es);
-	if (n < 7)
+	if (n < 29)
 	{
-		for (pm = (char *) a + es; pm < (char *) a + n * es; pm += es)
-			for (pl = pm; pl > (char *) a && cmp(pl - es, pl) > 0;
-				 pl -= es)
-				swap(pl, pl - es);
+		network_sort(a, n, es, cmp);
 		return;
 	}
 	presorted = 1;
