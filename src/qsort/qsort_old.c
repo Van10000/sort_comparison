@@ -274,19 +274,11 @@ loop:SWAPINIT(a, es);
 	}
 }
 
-char	   *pa,
-           *pb,
-           *pc,
-           *pd,
-           *pl,
-           *pm;
-int			r,
-            presorted;
-int			swaptype;
-size_t      d;
-
 void unrolled_insertion_sort(void *a, size_t n, size_t es, int (*cmp) (const void *, const void *))
 {
+char *pa, *pb, *pc;
+size_t swaptype = 0;
+
 	switch (n)
     {
         case 0:
@@ -342,7 +334,7 @@ void unrolled_insertion_sort(void *a, size_t n, size_t es, int (*cmp) (const voi
             if (pa != a)
             {
                 swap(a, pa);
-            }
+            }/* Actually, this part is better if swaps are expencive */
             for (pb = (char *) a + 2 * es; pb < (char *) a + n * es; pb += es)
                 for (pc = pb; pc > (char *) a && cmp(pc - es, pc) > 0;
                      pc -= es)
@@ -350,18 +342,54 @@ void unrolled_insertion_sort(void *a, size_t n, size_t es, int (*cmp) (const voi
     }
 }
 
+typedef struct
+  {
+    void *lo;
+    size_t hi;
+  } stack_node;
+
+#define STACK_SIZE        (1024)
+#define PUSH(low, high)        ((void) ((top->lo = (low)), (top->hi = (high)), ++top))
+#define        POP(low, high)        ((void) (--top, (low = top->lo), (high = top->hi)))
+#define        STACK_NOT_EMPTY        (stack < top)
+
+
 void
-pg_qsort_new_recursion(void *a, size_t n, size_t es, int (*cmp) (const void *, const void *))
+pg_qsort_new(void *a, size_t n, size_t es, int (*cmp) (const void *, const void *))
 {
-char	   *pn;
-size_t		d1,
-            d2;
+    char	   *pa,
+               *pb,
+               *pc,
+               *pd,
+               *pl,
+               *pm,
+               *pn;
+    int			r,
+                presorted,
+                swaptype;
+    size_t      d,
+                d1,
+                d2;
+    SWAPINIT(a, es);
+    stack_node stack[STACK_SIZE];
+    stack_node *top = stack;
+    goto loop_new;
+
+stack_new:
+    if (!STACK_NOT_EMPTY)
+    {
+        return;
+    }
+    POP(a, n);
 
 loop_new:
 	if (n < 7)
 	{
-        unrolled_insertion_sort(a, n, es, cmp);
-		return;
+        for (pm = (char *) a + es; pm < (char *) a + n * es; pm += es)
+			for (pl = pm; pl > (char *) a && cmp(pl - es, pl) > 0;
+				 pl -= es)
+				swap(pl, pl - es);
+		goto stack_new;
 	}
 	presorted = 1;
 	for (pm = (char *) a + es; pm < (char *) a + n * es; pm += es)
@@ -373,7 +401,7 @@ loop_new:
 		}
 	}
 	if (presorted)
-		return;
+		goto stack_new;
     pl = (char *) a;
     pm = (char *) a + (n / 2) * es;
     pn = (char *) a + (n - 1) * es;
@@ -383,19 +411,6 @@ loop_new:
     }
     else
     {
-        /*if (n <= 200)
-        {
-            d = (n / 4) * es;
-            pm = med5(pl, pl + d, pm, pm + d, pn, cmp);
-        }
-        else
-        {
-            d = (n / 8) * es;
-            pm = med3(med3(pl, pl + d, pl + 2 * d, cmp),
-                      med3(pm - d, pm, pm + d, cmp),
-                      med3(pn - 2 * d, pn - d, pn, cmp),
-                      cmp);
-        }*/
         d = (n / 8) * es;
         pm = med3(med3(pl, pl + d, pl + 2 * d, cmp),
                   med3(pm - d, pm, pm + d, cmp),
@@ -442,7 +457,9 @@ loop_new:
 	{
 		/* Recurse on left partition, then iterate on right partition */
 		if (d1 > es)
-			pg_qsort_new_recursion(a, d1 / es, es, cmp);
+		{
+            PUSH(a, d1 / es);
+        }
 		if (d2 > es)
 		{
 			/* Iterate rather than recurse to save stack space */
@@ -456,7 +473,9 @@ loop_new:
 	{
 		/* Recurse on right partition, then iterate on left partition */
 		if (d2 > es)
-			pg_qsort_new_recursion(pn - d2, d2 / es, es, cmp);
+		{
+            PUSH(pn - d2, d2 / es);
+        }
 		if (d1 > es)
 		{
 			/* Iterate rather than recurse to save stack space */
@@ -465,13 +484,7 @@ loop_new:
 			goto loop_new;
 		}
 	}
-}
-
-void
-pg_qsort_new(void *a, size_t n, size_t es, int (*cmp) (const void *, const void *))
-{
-    SWAPINIT(a, es);
-    pg_qsort_new_recursion(a, n, es, cmp);
+	goto stack_new;
 }
 
 /*
